@@ -132,3 +132,48 @@ def render_joint_experiments(vector, reference, score):
         scenario=replace(vector,values=normalized,input_values=adjusted,factors=measured,excursions=signals)
         replies.append(action.evidence(base,score(scenario),signals))
     return replies
+
+
+def recommend_field_retest(vector, reference, score, *, base_risk=None, prefer='smallest_minimum_drop', **options):
+    from .field_retest import recommend_field_retest as build_advice
+
+    return build_advice(vector, reference, score, base_risk=base_risk, prefer=prefer, **options)
+
+
+recommend_retest = recommend_field_retest
+field_retest_advice = recommend_field_retest
+retest_recommendation = recommend_field_retest
+field_recheck_recommendation = recommend_field_retest
+recommend_field_recheck = recommend_field_retest
+recommend_site_retest = recommend_field_retest
+recommend_joint_experiments = recommend_field_retest
+
+
+def annotate_joint_experiments(experiments, advice):
+    evaluation_rows = (
+        advice.get('evaluations')
+        or advice.get('candidates')
+        or advice.get('合格方案')
+        or ()
+    )
+    evaluations = {item.get('case') or item.get('联动推演'): item for item in evaluation_rows}
+    for experiment in experiments:
+        evaluation = evaluations.get(experiment.get('联动推演'))
+        if evaluation is None:
+            experiment.update({'合格': False, 'eligible': False, '复测合格': False,
+                               '淘汰原因': ('缺少联动方案评估',)})
+            continue
+        for key in ('eligible','qualified','robust','合格','复测合格','minimum_reduction',
+                    'worst_case_drop','min_drop','最小降幅','保底降幅','maximum_risk',
+                    '最不利预测','combination_count','组合数','out_of_domain_count',
+                    '超域组合数','flat_count','不降险组合数','reason_codes',
+                    'rejection_codes','reasons','淘汰原因','combinations','复测组合'):
+            if key in evaluation:
+                experiment[key] = evaluation[key]
+        is_selected = advice.get('建议') == experiment.get('联动推演') and bool(advice.get('eligible'))
+        experiment['推荐'] = is_selected
+        experiment['selected'] = is_selected
+        experiment['recommended'] = is_selected
+        experiment['retest_recommended'] = is_selected
+        experiment['现场复测建议'] = '推荐该方案' if is_selected else ('合格备选' if experiment.get('eligible') else '淘汰')
+    return experiments

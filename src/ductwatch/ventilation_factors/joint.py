@@ -111,3 +111,23 @@ def options(values, missing):
         simulate_tune_delivery(measurements, unobserved),
     )
     return tuple(action for action in cases if action is not None)
+
+
+def recommend_field_retest(*args, **kwargs):
+    from .field_retest import recommend_field_retest as recommend
+
+    return recommend(*args, **kwargs)
+
+
+def choose_field_retest(*args, **kwargs):
+    from .field_retest import choose_field_retest as choose
+
+    return choose(*args, **kwargs)
+
+
+recommend_retest = recommend_field_retest
+recommend_field_recheck = recommend_field_retest
+recommend_site_retest = recommend_field_retest
+recommend = recommend_field_retest
+choose = choose_field_retest
+choose_recommendation = choose_field_retest

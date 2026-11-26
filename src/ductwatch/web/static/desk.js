@@ -75,6 +75,18 @@ function showTables(target, records, options={}) {
 
 function renderMeasurements(card, row) {
     const labels = ledger.measures;
+    if (row.field_retest_recommendation) {
+        const advice = row.field_retest_recommendation;
+        card.append(node('h3','现场复测建议','inner-heading'));
+        const adviceRow = {
+            建议: advice['建议'] ?? '人工复测',
+            用量: advice['用量'] ?? '—',
+            最小降幅: advice['最小降幅'] ?? '—',
+            合格方案: advice['合格方案']?.length ?? 0,
+            说明: advice['原因'] ?? advice['排序规则'] ?? '按训练域和 ±5% 量测组合复核'
+        };
+        showTables(card,[adviceRow]);
+    }
     const snapshot = node('dl',undefined,'record-fields');
     for (const [key,value] of Object.entries(row.measurements)) {
         snapshot.append(node('dt',labels[key][0]),node('dd',row.unmeasured.includes(key) ? `未报，拟合补值 ${valueOf(value)} ${labels[key][1]}` : `${valueOf(value)} ${labels[key][1]}`));
@@ -87,6 +99,9 @@ function renderMeasurements(card, row) {
         const joint = node('details',undefined,'rejected');
         joint.append(node('summary','联动推演'));
         const entries = row.joint_experiments.map(move => ({情形:move['联动推演'],预测变化:move['变化'],用量:move['用量'],
+            复测合格:move['合格'] === undefined ? '—' : (move['合格'] ? '是' : '淘汰'),
+            最小降幅:move['最小降幅'] ?? '—',
+            淘汰原因:(move['淘汰原因'] ?? []).join('；') || '—',
             作业条件:move['先决条件'],量测:Object.entries(move['联动量测']).map(([name,c])=>`${labels[name][0]} ${c['原值']} → ${c['替换值']}`)}));
         showTables(joint,entries);
         card.append(joint);

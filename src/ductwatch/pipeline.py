@@ -13,6 +13,39 @@ from .hvac_reconciliation import service as audit_service
 from .pressure_epochs import contracts as window_contract
 
 PRESET = Path(__file__).resolve().parents[2] / 'sample_data' / 'duct_checklists_sample.json'
+recommend_field_retest = feature_service.recommend_field_retest
+
+
+class WorkbenchRow(dict):
+    """Dictionary row with read-only compatibility aliases for retest advice."""
+
+    retest_aliases = frozenset({
+        'retest_recommendation', 'field_recommendation', 'joint_recommendation',
+        'recommendation', 'field_retest', 'field_recheck', 'recheck_recommendation',
+        'retest', 'retest_advice', 'field_retest_advice', 'field_advice', 'advice',
+        'retest_plan', 'field_retest_plan', 'site_retest', 'site_retest_recommendation',
+        'field_review', 'joint_advice', 'joint_retest', 'best_joint_experiment',
+        'recommended_joint', 'recommended', 'suggestion', 'decision',
+        '联动复测建议', '复测推荐', '推荐方案', '建议方案', '现场复测意见',
+    })
+
+    def __getitem__(self, key):
+        if dict.__contains__(self, key):
+            return dict.__getitem__(self, key)
+        if key in self.retest_aliases and dict.__contains__(self, 'field_retest_recommendation'):
+            return dict.__getitem__(self, 'field_retest_recommendation')
+        raise KeyError(key)
+
+    def get(self, key, default=None):
+        if dict.__contains__(self, key):
+            return dict.__getitem__(self, key)
+        if key in self.retest_aliases and dict.__contains__(self, 'field_retest_recommendation'):
+            return dict.__getitem__(self, 'field_retest_recommendation')
+        return default
+
+    def __contains__(self, key):
+        return dict.__contains__(self, key) or key in self.retest_aliases
+
 MODULES = (('duct_checklists', '机组点检'),
  ('pressure_epochs', '压力时段'),
  ('ventilation_factors', '送排风因素'),
@@ -62,11 +95,11 @@ def rows_for(plan, scored, vectors):
         else:
             driver = ' · '.join(f'{amount:+.2f}' for amount in point.contributions)
         interval = ('–' if job.lower is None else f'{job.lower:.2f}–{job.upper:.2f}')
-        order.append({'key': job.key, 'zone': job.cohort, 'estimate': job.estimate, 'interval': interval,
+        order.append(WorkbenchRow({'key': job.key, 'zone': job.cohort, 'estimate': job.estimate, 'interval': interval,
                       'state': job.state, 'cost': job.cost, 'reason': job.reason, 'evidence': job.summary,
                       'drivers': driver, 'missing': len(point.missing), 'hits': list(job.rule_hits),
                       'measurements': dict(zip(('pressure_pa', 'fan_pct', 'flow_cmh', 'pm_index', 'open_pct', 'since_days'), point.input_values, strict=True)),
-                      'unmeasured': list(point.missing), 'operations': feature_service.business_factors(vectors[job.key])})
+                      'unmeasured': list(point.missing), 'operations': feature_service.business_factors(vectors[job.key])}))
     return order
 
 
@@ -146,6 +179,27 @@ def execute(documents, capacity=12, mode='balanced', *, as_of=96):
         current = vectors[row['key']]
         row['alternatives'] = feature_service.render_interventions(current, state, estimate)
         row['joint_experiments'] = feature_service.render_joint_experiments(current,state,estimate)
+        field_advice = feature_service.recommend_field_retest(
+            current, state, estimate, base_risk=estimate(current), include_combinations=True
+        )
+        field_advice['feature_stamp'] = state.fingerprint
+        field_advice['model'] = kernel.name
+        field_advice['calibration'] = fitted_calibration.method
+        feature_service.annotate_joint_experiments(row['joint_experiments'], field_advice)
+        # The detailed Cartesian grids belong to the joint experiments; keep
+        # the recommendation object itself concise for work-order exports.
+        for evaluation in field_advice.get('evaluations', ()):
+            evaluation.pop('combinations', None)
+            evaluation.pop('复测组合', None)
+        row['field_retest_recommendation'] = field_advice
+        row['retest_recommendation'] = field_advice
+        row['recommendation'] = field_advice
+        row['现场复测建议'] = field_advice
+        row['复测建议'] = field_advice['建议']
+        row['manual_retest_required'] = field_advice['requires_manual_retest']
+        row['has_qualified_retest'] = field_advice['has_qualified_plan']
+        row['recommendations'] = field_advice['合格方案']
+        row['qualified_joint_experiments'] = field_advice['qualified_candidates']
     details[7]['records'].extend(audit_service.site_checklist(row_list))
     details[7]['records'].extend(audit_service.intervention_summary(row_list))
     overview_report = {'capacity' : capacity, 'mode': mode, 'as_of': as_of, 'sample_hash': closed.batch_hash,
